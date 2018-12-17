@@ -66,9 +66,11 @@ def concept_drift_scheme(window_size, permut, cd_size, significance_rate, data_s
 
     t_ = 0 
     k = window_size  
-    D = [] 
+    D = dict() 
     X, y = get_data_stream(data_stream.__next__(), None, None)
     times = []
+    Rord_list = []
+    Rsmean_list = []
     i = 1
     
     while(data_stream.has_next()):
@@ -78,16 +80,19 @@ def concept_drift_scheme(window_size, permut, cd_size, significance_rate, data_s
         X, y = get_data_stream(data_stream.__next__(), X, y)
         Sx_ord, Sx_ord_t, Sy_ord, Sy_ord_t = train_test_split(X[t_:, :], y[t_:], test_size=window_size,
                                                               shuffle=False)
-        if detect_concept_drift((X[t_:, :], y[t_:]), (Sx_ord, Sy_ord), (Sx_ord_t, Sy_ord_t), 
-                                permut, cd_size, significance_rate, window_size):
+        drift_status, Rord, Rsmean = detect_concept_drift((X[t_:, :], y[t_:]), (Sx_ord, Sy_ord), (Sx_ord_t, Sy_ord_t), 
+                                            permut, cd_size, significance_rate, window_size)
+        Rord_list.append(Rord)
+        Rsmean_list.append(Rsmean)
+        if drift_status:
             print("\nA CONCEPT DRIFT HAS BEEN DETECTED at k = {}\n".format(k))
             t_ = k
-            D.append(k)
+            D[i-1] = k
         k += window_size
         time_s = time() - time_s
         times.append(time_s)
         print("Took : "+str(time_s))
-    return D, times
+    return D, times, Rord_list, Rsmean_list
         
 def detect_concept_drift(data, S_ord, S_ord_t, permut, cd_size, significance_rate, window_size):
     Rord = empirical_risk(S_ord, S_ord_t)
@@ -99,7 +104,7 @@ def detect_concept_drift(data, S_ord, S_ord_t, permut, cd_size, significance_rat
         S.append((X, y))
         S_t.append((X_t, y_t))
         Rs.append(empirical_risk(S[-1], S_t[-1]))        
-    return TEST(Rord, Rs, cd_size, significance_rate)
+    return TEST(Rord, Rs, cd_size, significance_rate), Rord, np.mean(Rs)
          
 def empirical_risk(S, S_t):
     hyperparams = {'kernel': 'rbf', 
@@ -112,9 +117,8 @@ def empirical_risk(S, S_t):
 def TEST(Rord, Rs, cd_size, significance_rate): 
     nb_detected = 1
     for i in range(len(Rs)):
-        nb_detected += ((Rord - Rs[i]) <= cd_size)*1    
+        nb_detected += ((Rord - Rs[i]) <= cd_size)*1 
     tmp = nb_detected/(len(Rs) + 1)
-    print("Well "+str(tmp))
     if tmp <= significance_rate:
         return True
     else:
